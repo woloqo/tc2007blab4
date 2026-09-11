@@ -11,6 +11,8 @@ import mx.tec.sabores.domain.RatingSummary
 import mx.tec.sabores.domain.Restaurant
 import mx.tec.sabores.domain.RestaurantEnLista
 import mx.tec.sabores.domain.Review
+import okio.IOException
+import retrofit2.HttpException
 
 data class MyReviewItem(val restaurantName: String, val review: Review)
 
@@ -26,8 +28,8 @@ class SaboresViewModel(
     private val repository: RestaurantRepository = RestaurantRepository()
 ) : ViewModel() {
 
-    // Ya no se lee una vez al construir: ahora llega de la red, y tarda.
-    var restaurantes by mutableStateOf<List<RestaurantEnLista>>(emptyList())
+    // Ya no se lee una vez al construir: ahora llega de la red, y tarda
+    var restaurantes by mutableStateOf<UiState<List<RestaurantEnLista>>>(UiState.Cargando)
         private set
 
     var detalle by mutableStateOf<Detalle?>(null)
@@ -40,7 +42,14 @@ class SaboresViewModel(
 
     fun cargarRestaurantes() {
         viewModelScope.launch {
-            restaurantes = repository.getAllForList()
+            restaurantes = UiState.Cargando
+            restaurantes = try {
+                UiState.Exito(repository.getAllForList())
+            } catch (e: IOException) {
+                UiState.Error("No hay conexión. Revisa tu internet.")
+            } catch (e: HttpException) {
+                UiState.Error("El servidor respondió ${e.code()}.")
+            }
         }
     }
 
