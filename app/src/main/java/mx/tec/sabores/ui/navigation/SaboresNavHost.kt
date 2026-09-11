@@ -89,15 +89,21 @@ fun SaboresApp() {
                 val id = entry.arguments?.getInt(Route.ARG_RESTAURANT_ID) ?: return@composable
 
                 LaunchedEffect(id) { viewModel.cargarDetalle(id) }
-                val detalle = viewModel.detalle ?: return@composable
 
-                RestaurantDetailScreen(
-                    restaurant = detalle.restaurant,
-                    summary = detalle.summary,
-                    reviews = detalle.reviews,
-                    onWriteReviewClick = { nav.navigate(Route.newReview(id)) },
-                    onBack = { nav.popBackStack() }
-                )
+                when (val estado = viewModel.detalle) {
+                    is UiState.Cargando -> CargandoView()
+                    is UiState.Error -> ErrorView(
+                        mensaje = estado.mensaje,
+                        onReintentar = { viewModel.cargarDetalle(id) }
+                    )
+                    is UiState.Exito -> RestaurantDetailScreen(
+                        restaurant = estado.datos.restaurant,
+                        summary = estado.datos.summary,
+                        reviews = estado.datos.reviews,
+                        onWriteReviewClick = { nav.navigate(Route.newReview(id)) },
+                        onBack = { nav.popBackStack() }
+                    )
+                }
             }
 
             composable(
@@ -105,7 +111,8 @@ fun SaboresApp() {
                 arguments = listOf(navArgument(Route.ARG_RESTAURANT_ID) { type = NavType.IntType })
             ) { entry ->
                 val id = entry.arguments?.getInt(Route.ARG_RESTAURANT_ID) ?: return@composable
-                val restaurant = viewModel.detalle?.restaurant ?: return@composable
+                val estado = viewModel.detalle
+                val restaurant = (estado as? UiState.Exito)?.datos?.restaurant ?: return@composable
 
                 val formViewModel: NewReviewViewModel = viewModel()
 
@@ -115,8 +122,9 @@ fun SaboresApp() {
                     onStarsChange = formViewModel::onStarsChange,
                     onCommentChange = formViewModel::onCommentChange,
                     onSave = {
-                        // Todavía no guarda: publicar contra el servidor es el Bloque C.
-                        nav.popBackStack()
+                        // El popBackStack ya no es inmediato: ocurre cuando el servidor confirma.
+                        // Si falla, la pantalla se queda y el error se ve.
+                        formViewModel.publicar(id) { nav.popBackStack() }
                     },
                     onCancel = { nav.popBackStack() }
                 )
