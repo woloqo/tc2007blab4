@@ -5,10 +5,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
@@ -17,14 +20,14 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import mx.tec.sabores.ui.components.CargandoView
+import mx.tec.sabores.ui.components.ErrorView
 import mx.tec.sabores.ui.screens.MyReviewsScreen
 import mx.tec.sabores.ui.screens.NewReviewScreen
 import mx.tec.sabores.ui.screens.RestaurantDetailScreen
 import mx.tec.sabores.ui.screens.RestaurantListScreen
 import mx.tec.sabores.ui.state.NewReviewViewModel
 import mx.tec.sabores.ui.state.SaboresViewModel
-import mx.tec.sabores.ui.components.CargandoView
-import mx.tec.sabores.ui.components.ErrorView
 import mx.tec.sabores.ui.state.UiState
 
 @Composable
@@ -36,7 +39,18 @@ fun SaboresApp() {
     val currentRoute = backStackEntry?.destination?.route
     val showBottomBar = MenuItem.entries.any { it.route == currentRoute }
 
+    val snackbarHostState = remember { SnackbarHostState() }
+    val snackbarMsg = viewModel.snackbarMessage
+
+    LaunchedEffect(snackbarMsg) {
+        if (snackbarMsg != null) {
+            snackbarHostState.showSnackbar(snackbarMsg)
+            viewModel.dismissSnackbar()
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
             if (showBottomBar) {
                 NavigationBar {
@@ -56,7 +70,7 @@ fun SaboresApp() {
                     }
                 }
             }
-        }
+        },
     ) { padding ->
         NavHost(
             navController = nav,
@@ -73,13 +87,21 @@ fun SaboresApp() {
                     )
                     is UiState.Exito -> RestaurantListScreen(
                         restaurants = estado.datos,
+                        busqueda = viewModel.busqueda,
+                        onBusquedaChange = viewModel::onBusquedaChange,
+                        isRefreshing = viewModel.isRefreshing,
+                        onRefresh = { viewModel.cargarRestaurantes(esRefresh = true) },
                         onRestaurantClick = { id -> nav.navigate(Route.detail(id)) }
                     )
                 }
             }
 
             composable(Route.MY_REVIEWS) {
-                MyReviewsScreen(items = viewModel.mias)
+                LaunchedEffect(Unit) { viewModel.cargarMisResenas() }
+                MyReviewsScreen(
+                    items = viewModel.mias,
+                    onDeleteReview = viewModel::borrarResena
+                )
             }
 
             composable(
@@ -101,6 +123,7 @@ fun SaboresApp() {
                         summary = estado.datos.summary,
                         reviews = estado.datos.reviews,
                         onWriteReviewClick = { nav.navigate(Route.newReview(id)) },
+                        onDeleteReview = viewModel::borrarResena,
                         onBack = { nav.popBackStack() }
                     )
                 }
@@ -122,9 +145,11 @@ fun SaboresApp() {
                     onStarsChange = formViewModel::onStarsChange,
                     onCommentChange = formViewModel::onCommentChange,
                     onSave = {
-                        // El popBackStack ya no es inmediato: ocurre cuando el servidor confirma.
-                        // Si falla, la pantalla se queda y el error se ve.
-                        formViewModel.publicar(id) { nav.popBackStack() }
+                        formViewModel.publicar(id) {
+                            viewModel.cargarDetalle(id)
+                            viewModel.cargarRestaurantes(esRefresh = true)
+                            nav.popBackStack()
+                        }
                     },
                     onCancel = { nav.popBackStack() }
                 )

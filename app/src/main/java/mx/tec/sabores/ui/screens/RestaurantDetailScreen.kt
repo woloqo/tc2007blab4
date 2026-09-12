@@ -2,6 +2,7 @@ package mx.tec.sabores.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -23,6 +25,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import mx.tec.sabores.domain.RatingSummary
@@ -39,7 +42,8 @@ fun RestaurantDetailScreen(
     reviews: List<Review>,
     onWriteReviewClick: () -> Unit,
     onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onDeleteReview: ((Int) -> Unit)? = null,
 ) {
     Scaffold(
         modifier = modifier,
@@ -92,10 +96,25 @@ fun RestaurantDetailScreen(
                     )
                 }
             } else {
-                items(reviews) { review ->
+                items(reviews, key = { it.id }) { review ->
                     Card(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(14.dp)) {
-                            StarsRow(review.stars)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                StarsRow(review.stars)
+                                if (onDeleteReview != null) {
+                                    IconButton(onClick = { onDeleteReview(review.id) }) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "Borrar reseña",
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                }
+                            }
                             Spacer(Modifier.height(6.dp))
                             Text(review.comment, style = MaterialTheme.typography.bodyMedium)
                         }

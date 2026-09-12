@@ -32,6 +32,8 @@ class NewReviewViewModel(
     private val repository: RestaurantRepository = RestaurantRepository()
 ) : ViewModel() {
 
+    private var guardandoEnProceso = false
+
     var uiState by mutableStateOf(NewReviewUiState())
         private set
 
@@ -46,19 +48,22 @@ class NewReviewViewModel(
     }
 
     fun publicar(restaurantId: Int, alTerminar: () -> Unit) {
-        if (!uiState.canSave) return
+        if (guardandoEnProceso || !uiState.canSave) return
+        guardandoEnProceso = true
+        uiState = uiState.copy(guardando = true, errorAlGuardar = null)
         viewModelScope.launch {
-            uiState = uiState.copy(guardando = true, errorAlGuardar = null)
             try {
                 repository.addReview(restaurantId, uiState.stars, uiState.comment)
                 uiState = uiState.copy(guardando = false)
                 alTerminar()
             } catch (e: IOException) {
+                guardandoEnProceso = false
                 uiState = uiState.copy(
                     guardando = false,
                     errorAlGuardar = "No hay conexión. Tu reseña no se publicó."
                 )
             } catch (e: HttpException) {
+                guardandoEnProceso = false
                 uiState = uiState.copy(guardando = false, errorAlGuardar = mensajeDe(e))
             }
         }

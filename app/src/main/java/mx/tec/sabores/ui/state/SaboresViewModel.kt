@@ -31,8 +31,15 @@ class SaboresViewModel(
     private val repository: RestaurantRepository = RestaurantRepository()
 ) : ViewModel() {
 
-    // Ya no se lee una vez al construir: ahora llega de la red, y tarda
+    private var cachedRestaurantes: List<RestaurantEnLista>? = null
+
     var restaurantes by mutableStateOf<UiState<List<RestaurantEnLista>>>(UiState.Cargando)
+        private set
+
+    var isRefreshing by mutableStateOf(false)
+        private set
+
+    var busqueda by mutableStateOf("")
         private set
 
     var detalle by mutableStateOf<UiState<Detalle>>(UiState.Cargando)
@@ -41,6 +48,64 @@ class SaboresViewModel(
     var mias by mutableStateOf<List<MyReviewItem>>(emptyList())
         private set
 
+    var snackbarMessage by mutableStateOf<String?>(null)
+        private set
+
+    init {
+        cargarRestaurantes()
+        cargarMisResenas()
+    }
+
+    fun onBusquedaChange(nuevaBusqueda: String) {
+        busqueda = nuevaBusqueda
+    }
+
+    fun dismissSnackbar() {
+        snackbarMessage = null
+    }
+
+    fun cargarRestaurantes(esRefresh: Boolean = false) {
+        viewModelScope.launch {
+            if (cachedRestaurantes == null) {
+                restaurantes = UiState.Cargando
+            }
+            if (esRefresh) {
+                isRefreshing = true
+            }
+            try {
+                val lista = repository.getAllForList()
+                cachedRestaurantes = lista
+                restaurantes = UiState.Exito(lista)
+            } catch (e: IOException) {
+                if (cachedRestaurantes == null) {
+                    restaurantes = UiState.Error("No hay conexión. Revisa tu internet.")
+                }
+            } catch (e: HttpException) {
+                if (cachedRestaurantes == null) {
+                    restaurantes = UiState.Error("El servidor respondió ${e.code()}.")
+                }
+            } finally {
+                isRefreshing = false
+            }
+        }
+    }
+
+    fun cargarMisResenas() {
+        viewModelScope.launch {
+            try {
+                val reviews = repository.getMyReviews()
+                val list = cachedRestaurantes ?: emptyList()
+                mias = reviews.map { review ->
+                    val nombre = list.find { it.restaurant.id == review.restaurantId }?.restaurant?.name
+                        ?: "Restaurante #${review.restaurantId}"
+                    MyReviewItem(nombre, review)
+                }
+            } catch (e: Exception) {
+                // Si falla, se queda con la lista local actual
+            }
+        }
+    }
+
     fun cargarDetalle(id: Int) {
         viewModelScope.launch {
             detalle = UiState.Cargando
@@ -48,17 +113,32 @@ class SaboresViewModel(
         }
     }
 
-    init { cargarRestaurantes() }
+    fun borrarResena(reviewId: Int) {
+        val prevMias = mias
+        val prevDetalle = detalle
 
-    fun cargarRestaurantes() {
+        // Actualización optimista inmediata
+        mias = mias.filter { it.review.id != reviewId }
+        if (detalle is UiState.Exito) {
+            val d = (detalle as UiState.Exito).datos
+            val nuevasReviews = d.reviews.filter { it.id != reviewId }
+            detalle = UiState.Exito(d.copy(reviews = nuevasReviews))
+        }
+
         viewModelScope.launch {
-            restaurantes = UiState.Cargando
-            restaurantes = try {
-                UiState.Exito(repository.getAllForList())
-            } catch (e: IOException) {
-                UiState.Error("No hay conexión. Revisa tu internet.")
-            } catch (e: HttpException) {
-                UiState.Error("El servidor respondió ${e.code()}.")
+            try {
+                val exito = repository.deleteReview(reviewId)
+                if (!exito) {
+                    // Revertir si el servidor responde que no se pudo
+                    mias = prevMias
+                    detalle = prevDetalle
+                    snackbarMessage = "No se pudo borrar la reseña. No tienes permiso."
+                }
+            } catch (e: Exception) {
+                // Revertir en caso de falla de red o error HTTP
+                mias = prevMias
+                detalle = prevDetalle
+                snackbarMessage = "Error al borrar la reseña. Se ha restaurado."
             }
         }
     }
@@ -70,5 +150,4 @@ class SaboresViewModel(
     } catch (e: HttpException) {
         UiState.Error(mensajeDe(e))
     }
-
 }
